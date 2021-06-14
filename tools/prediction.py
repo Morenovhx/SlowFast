@@ -54,10 +54,10 @@ for line in file:
                            reverse=True))
     prediction_scores = get_best_predictions(prediction_scores)                           
     timestamp = int(round(((line[0]-128)+line[1])/25))+46
-    box_coords = {'top_left_x':line[3],
-                  'top_left_y':line[4],
-                  'bottom_right_x':line[5],
-                  'bottom_right_y':line[6]}
+    box_coords = {'bot_left_x':line[3],
+                  'bot_left_y':line[4],
+                  'top_right_x':line[5],
+                  'top_right_y':line[6]}
                   
     action = {'timestamp': timestamp,
                 'bot_left_x': line[3],
