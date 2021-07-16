@@ -276,9 +276,10 @@ class HungarianTracker:
                     new_embeddings[i], new_bounding_boxes[i], self.current_task_id
                 )
                 ids.append(self.tracks[row].track_id)
-
+        new_tracks = []
         for j in range(len(self.tracks)):
-            if self.tracks[i].is_outdated(self.current_task_id):
-                self.tracks.pop(j)
+            if not self.tracks[j].is_outdated(self.current_task_id):
+                new_tracks.append(self.tracks[j])
+        self.tracks = new_tracks
 
         return ids, new_bounding_boxes

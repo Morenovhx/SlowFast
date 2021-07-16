@@ -378,7 +378,7 @@ def train(cfg):
     logger.info(pprint.pformat(cfg))
 
     # Build the video model and print model statistics.
-    model = build_model(cfg)
+    model = build_model(cfg, gpu_id=cfg.GPU_ID)
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
 

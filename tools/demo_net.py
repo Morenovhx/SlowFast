@@ -109,6 +109,7 @@ def demo(cfg):
         if cfg.DEMO.THREAD_ENABLE:
             frame_provider = ThreadVideoManager(cfg)
         else:
+            print("\n\n\nJE SUIS UTILISE\n\n\n")
             frame_provider = VideoManager(cfg)
 
         for task in tqdm.tqdm(run_demo(cfg, frame_provider)):

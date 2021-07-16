@@ -9,7 +9,7 @@ from fvcore.common.file_io import PathManager
 logger = logging.getLogger(__name__)
 
 FPS = 30
-AVA_VALID_FRAMES = range(902, 1799)
+AVA_VALID_FRAMES = range(0, 901)
 
 
 def load_image_lists(cfg, is_train):

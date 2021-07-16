@@ -390,6 +390,9 @@ _C.SHARD_ID = 0
 # Output basedir.
 _C.OUTPUT_DIR = "./tmp"
 
+# Commentaire parano
+_C.GPU_ID = 0
+
 # Note that non-determinism may still be present due to non-deterministic
 # operator implementations in GPU operator libraries.
 _C.RNG_SEED = 1

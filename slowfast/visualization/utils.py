@@ -14,7 +14,7 @@ from slowfast.datasets.utils import pack_pathway_output, tensor_normalize
 logger = logging.get_logger(__name__)
 
 
-def draw_predictions(task, video_vis):
+def draw_predictions(task, video_vis, activations):
     """
     Draw prediction for the given task.
     Args:
@@ -59,7 +59,8 @@ def draw_predictions(task, video_vis):
             frames = video_vis.draw_clip_range(
                 frames,
                 preds,
-                boxes,
+                bboxes=boxes,
+                activations=activations,
                 nbboxes=nbboxes,
                 keyframe_idx=keyframe_idx,
                 # draw_range=draw_range,

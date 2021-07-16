@@ -113,4 +113,3 @@ with open("new_scores.csv", 'w') as csvfile:
             csvwriter.writerow([action['timestamp'],action['bot_left_x'],action["bot_left_y"],action["top_right_x"],action["top_right_y"],tag])
 with open(predictions_path, 'w') as f:
     json.dump(predictions, f, indent=4)
-

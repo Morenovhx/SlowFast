@@ -30,6 +30,7 @@ class Predictor:
                 slowfast/config/defaults.py
             gpu_id (Optional[int]): GPU id.
         """
+        gpu_id = cfg.GPU_ID
         if cfg.NUM_GPUS:
             self.gpu_id = (
                 torch.cuda.current_device() if gpu_id is None else gpu_id
@@ -118,7 +119,16 @@ class Predictor:
         if self.cfg.DETECTION.ENABLE and not bboxes.shape[0]:
             preds = torch.tensor([])
         else:
+            print(self.model)
+            activation = []
+            def get_activation(name):
+                def hook(model, input, output):
+                    # activation[name] = [np.squeeze(i.cpu().detach().numpy()) for i in input[0]] + [np.squeeze(input[1].cpu().detach().numpy())]
+                    activation.append([np.squeeze(i.cpu().detach().numpy()) for i in input])
+                return hook
+            self.model.head.projection.register_forward_hook(get_activation('before_head'))
             preds = self.model(inputs, bboxes)
+            # print([[j.shape for j in i] for i in activation['before_head']])
 
         if self.cfg.NUM_GPUS:
             preds = preds.cpu()
@@ -130,7 +140,7 @@ class Predictor:
         if bboxes is not None:
             task.add_bboxes(bboxes[:, 1:])
 
-        return task
+        return task, activation
 
 
 class ActionPredictor:
@@ -161,9 +171,9 @@ class ActionPredictor:
             task (TaskInfo object): task object that contain
                 the necessary information for action prediction. (e.g. frames, boxes)
         """
-        task = self.predictor(task)
+        task, activations = self.predictor(task)
         if not self.is_async:
-            frames = draw_predictions(task, self.vis)
+            frames = draw_predictions(task, self.vis, activations)
             task.frames = np.array(frames)
             self.vis_queue.put(task)
             return
@@ -209,6 +219,7 @@ class Detectron2Predictor:
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = cfg.DEMO.DETECTRON2_THRESH
         self.cfg.MODEL.WEIGHTS = cfg.DEMO.DETECTRON2_WEIGHTS
         self.cfg.INPUT.FORMAT = cfg.DEMO.INPUT_FORMAT
+        gpu_id = cfg.GPU_ID
         if cfg.NUM_GPUS and gpu_id is None:
             gpu_id = torch.cuda.current_device()
         self.cfg.MODEL.DEVICE = (

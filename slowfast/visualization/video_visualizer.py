@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from detectron2.utils.visualizer import Visualizer
+import pickle
 
 import slowfast.utils.logging as logging
 from slowfast.utils.misc import get_class_names
@@ -446,11 +447,13 @@ class VideoVisualizer:
             n_instances = 0
 
         if preds is None:
+            top_classes = [0]
             pass
         elif ground_truth:
             top_scores, top_classes = [None] * n_instances, preds
 
         elif self.mode == "top-k":
+            top_scores, top_classes = [], []
             top_scores, top_classes = torch.topk(preds, k=self.top_k)
             top_scores, top_classes = top_scores.tolist(), top_classes.tolist()
         elif self.mode == "thres":
@@ -460,6 +463,9 @@ class VideoVisualizer:
                 top_scores.append(pred[mask].tolist())
                 top_class = torch.squeeze(torch.nonzero(mask), dim=-1).tolist()
                 top_classes.append(top_class)
+        else:
+            top_classes = [0]
+
 
         # Create labels top k predicted classes with their scores.
         text_labels = []
@@ -516,8 +522,12 @@ class VideoVisualizer:
                         alpha=text_alpha,
                     )
         else:
-            text = text_labels[0]
-            pred_class = top_classes[0]
+            try:
+                text = text_labels[0]
+                pred_class = top_classes[0]
+            except:
+                text = "ukw"
+                pred_class = top_classes[0]
             colors = [self._get_color(pred) for pred in pred_class]
             frame_visualizer.draw_multiple_text(
                 text,
@@ -534,6 +544,7 @@ class VideoVisualizer:
         self,
         frames,
         preds,
+        activations=None,
         bboxes=None,
         nbboxes=None,
         text_alpha=0.5,
@@ -574,6 +585,7 @@ class VideoVisualizer:
             + self.draw_clip(
                 draw_frames,
                 preds,
+                activations=activations,
                 bboxes=bboxes,
                 nbboxes=nbboxes,
                 text_alpha=text_alpha,
@@ -590,6 +602,7 @@ class VideoVisualizer:
         self,
         frames,
         preds,
+        activations=None,
         bboxes=None,
         nbboxes=None,
         text_alpha=0.5,
@@ -627,77 +640,116 @@ class VideoVisualizer:
         )
 
         frames, adjusted = self._adjust_frames_type(frames)
-        if keyframe_idx is None:
-            half_left = len(repeated_seq) // 2
-            half_right = (len(repeated_seq) + 1) // 2
-        else:
-            mid = int((keyframe_idx / len(frames)) * len(repeated_seq))
-            half_left = mid
-            half_right = len(repeated_seq) - mid
+      #  if keyframe_idx is None:
+      #      half_left = len(repeated_seq) // 2
+      #      half_right = (len(repeated_seq) + 1) // 2
+      #  else:
+      #      print("setting mid")
+      #      print("keyframe_idx", keyframe_idx)
+      #      print("len(frames)", len(frames))
+      #      print("len(repeated_seq)",len(repeated_seq))
+      #      mid = int((keyframe_idx / len(frames)) * len(repeated_seq))
+      #      half_left = mid
+      #      half_right = len(repeated_seq) - mid
 
-        alpha_ls = np.concatenate(
-            [
-                np.linspace(0, 1, num=half_left),
-                np.linspace(1, 0, num=half_right),
-            ]
-        )
-        text_alpha = text_alpha
-        frames = frames[repeated_seq]
+      #  alpha_ls = np.concatenate(
+      #      [
+      #          np.linspace(0, 1, num=half_left),
+      #          np.linspace(1, 0, num=half_right),
+      #      ]
+      #  )
+      #  text_alpha = text_alpha
+      #  frames = frames[repeated_seq]
         img_ls = []
 
-        if mid is not None:
-            mid_frame = frames[mid]
-        else:
-            mid_frame = frames[half_left]
+      #  if mid is not None:
+      #      print("frames[0]",frames[0])
+      #      mid_frame = frames[mid]
+      #  else:
+      #      mid_frame = frames[half_left]
+
+        try:
+            print("nbboxes", nbboxes)
+            print("frames", frame)
+        except:
+            pass
+
+
 
         ids_boxes = [
             self.tracker.advance(nbboxes[i], frame)
-            for i, frame in enumerate(frames)
+            for i, frame in enumerate(frames) if nbboxes is not None
         ]
-        mid_ids, _ = ids_boxes[mid if mid is not None else half_left]
+        #mid_ids, _ = ids_boxes[mid if mid is not None else half_left]
+
+        print("ids_boxes", ids_boxes)
+
+      #  try:
+      #      with open(scores_path+".pickle", 'rb') as handle:
+      #          new_pickle = pickle.load(handle)
+      #  except:
+      #      new_pickle = []
+
+       # for i, (box_ids, bboxes) in enumerate(ids_boxes):
+       #     for box_id, bbox, pred, activation in zip(box_ids, bboxes, preds, activations):
+       #         new_pickle.append({"json": f'{self.tracker.current_task_id},{i},{box_id},{str(bbox.tolist()).strip("[]")},{str(pred.tolist()).strip("[]")}',
+       #                            "activations": activation,
+       #                            "ground_truth": ground_truth})
+
+        # print("\n\n\nNEW_PICKLE")
+        # print(new_pickle)
+        # print("\n\n")
+
+       # with open(scores_path+".pickle", 'wb') as handle:
+       #     pickle.dump(new_pickle, handle)
+
 
         with open(scores_path, 'a+') as f:
             for i, (box_ids, bboxes) in enumerate(ids_boxes):
                 for box_id, bbox, pred in zip(box_ids, bboxes, preds):
                     f.write(f'{self.tracker.current_task_id},{i},{box_id},{str(bbox.tolist()).strip("[]")},{str(pred.tolist()).strip("[]")}\n')
 
-        for i, (alpha, frame) in enumerate(zip(alpha_ls, frames)):
-            box_ids, frame_boxes = ids_boxes[i]
-            if not draw_static_boxes:
-                frame_preds = [
-                    preds[mid_ids.index(box_id)]
-                    if box_id in mid_ids else torch.zeros_like(preds[0])
-                    for box_id in box_ids
-                ]
-                draw_img = self.draw_one_frame(
-                    frame,
-                    preds=frame_preds,
-                    bboxes=frame_boxes,
-                    box_ids=box_ids,
-                    alpha=1,
-                    text_alpha=text_alpha,
-                )
-            else:
-                draw_img = self.draw_one_frame(
-                    frame,
-                    bboxes=frame_boxes,
-                    box_ids=box_ids,
-                    alpha=1,
-                    text_alpha=text_alpha,
-                )
-                draw_img = self.draw_one_frame(
-                    draw_img,
-                    preds=preds,
-                    bboxes=bboxes,
-                    box_ids=mid_ids,
-                    alpha=alpha,
-                    text_alpha=text_alpha,
-                    ground_truth=ground_truth,
-                )
-            if adjusted:
-                draw_img = draw_img.astype("float32") / 255
+     #   for i, (alpha, frame) in enumerate(zip(alpha_ls, frames)):
+     #       try:
+     #           box_ids, frame_boxes = ids_boxes[i]
+     #       except:
+     #           box_ids, frame_boxes = None, None
+     #       if 0>1:#not draw_static_boxes:
+     #           frame_preds = [
+               #     preds[mid_ids.index(box_id)]
+               #     if box_id in mid_ids else torch.zeros_like(preds[0])
+               #     for box_id in box_ids
+     #           ]
+               # draw_img = self.draw_one_frame(
+               #     frame,
+               #     preds=frame_preds,
+               #     bboxes=frame_boxes,
+               #     box_ids=box_ids,
+               #     alpha=1,
+               #     text_alpha=text_alpha,
+               # )
+           # else:
+               # draw_img = self.draw_one_frame(
+               #     frame,
+               #     bboxes=frame_boxes,
+               #     box_ids=box_ids,
+               #     alpha=1,
+               #     text_alpha=text_alpha,
+               # )
+               # draw_img = self.draw_one_frame(
+               #     draw_img,
+               #     preds=preds,
+               #     bboxes=bboxes,
+               #     box_ids=mid_ids,
+               #     alpha=alpha,
+               #     text_alpha=text_alpha,
+               #     ground_truth=ground_truth,
+               # )
+           # if adjusted:
+           #     draw_img = draw_img.astype("float32") / 255
 
-            img_ls.append(draw_img)
+            #img_ls.append(draw_img)
+        image_ls = []
 
         return img_ls
 

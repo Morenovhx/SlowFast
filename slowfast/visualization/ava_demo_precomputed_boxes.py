@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-
+import pickle
 import numpy as np
 import os
 import cv2
@@ -43,7 +43,7 @@ class AVAVisualizerWithPrecomputedBox:
             )
         else:
             self.video_name = self.source.split("/")[-1]
-            self.video_name = self.video_name.split(".")[0]
+            self.video_name = self.video_name.split(".")[:-1]
 
         self.cfg = cfg
         self.cap = cv2.VideoCapture(self.source)
@@ -70,7 +70,6 @@ class AVAVisualizerWithPrecomputedBox:
             self.display_width,
             self.display_height,
         )
-
         self.seq_length = cfg.DATA.NUM_FRAMES * cfg.DATA.SAMPLING_RATE
         self.no_frames_repeat = cfg.DEMO.SLOWMO
 
@@ -141,7 +140,7 @@ class AVAVisualizerWithPrecomputedBox:
         ), "Cannot run demo visualization on multiple GPUs."
 
         # Build the video model and print model statistics.
-        model = build_model(self.cfg)
+        model = build_model(self.cfg, gpu_id=self.cfg.GPU_ID)
         model.eval()
         logger.info("Start loading model info")
         misc.log_model_info(model, self.cfg, use_train_input=False)
@@ -171,24 +170,57 @@ class AVAVisualizerWithPrecomputedBox:
                 ],
                 axis=1,
             )
-            if self.cfg.NUM_GPUS:
-                # Transfer the data to the current GPU device.
-                if isinstance(inputs, (list,)):
-                    for i in range(len(inputs)):
-                        inputs[i] = inputs[i].cuda(non_blocking=True)
-                else:
-                    inputs = inputs.cuda(non_blocking=True)
+            with torch.cuda.device(self.cfg.GPU_ID):
+                if self.cfg.NUM_GPUS:
+                    # Transfer the data to the current GPU device.
+                    if isinstance(inputs, (list,)):
+                        for i in range(len(inputs)):
+                            inputs[i] = inputs[i].cuda(non_blocking=True)
+                    else:
+                        inputs = inputs.cuda(non_blocking=True)
 
-                box_inputs = box_inputs.cuda()
-
+                    box_inputs = box_inputs.cuda()
+            activation = []
+            def get_activation(name):
+                def hook(model, input, output):
+                    # activation[name] = [np.squeeze(i.cpu().detach().numpy()) for i in input[0]] + [np.squeeze(input[1].cpu().detach().numpy())]
+                    activation.append(np.squeeze(input[0].cpu().detach().numpy()))
+                return hook
+            model.head.projection.register_forward_hook(get_activation('before_head'))
             preds = model(inputs, box_inputs)
+            #print("video_name",self.video_name)
+            try:
+                with open("pickle_result/"+".".join(self.video_name)+".pickle", 'rb') as handle:
+                    new_pickle = pickle.load(handle)
+            except:
+                new_pickle = []
 
+            for i in range(len(self.gt_boxes[keyframe_idx][0])):
+                #print("i",i)
+                #print("activation", activation)
+                #print("keyframe_idx",keyframe_idx)
+                new_pickle.append({"activation": activation[-1][i,:], "ground_truth_boxes": self.gt_boxes[keyframe_idx][0][i], "label": self.gt_boxes[keyframe_idx][1][i],"video": ".".join(self.video_name),"keyframe_idx": keyframe_idx})
+                # print("\n\n\nNEW_PICKLE")
+                # print(new_pickle)
+                # print("\n\n")
+                #new_pickle.append(0)
+
+            with open("pickle_result/"+".".join(self.video_name)+".pickle", 'wb') as handle:
+                pickle.dump(new_pickle, handle)
+
+
+
+           # print("boxes_and_labels", boxes_and_labels)
+           # print("len activiations", len(activation))
+           # print("len activation[0]", len(activation[0]))
+           # print("shape activation[0][0]", activation[0][0].shape)
             preds = preds.detach()
 
             if self.cfg.NUM_GPUS:
                 preds = preds.cpu()
 
             boxes_and_labels[1] = preds
+            self.activations = activation
 
     def draw_video(self):
         """
@@ -229,13 +261,17 @@ class AVAVisualizerWithPrecomputedBox:
 
         logger.info("Start Visualization...")
         for keyframe_idx in tqdm.tqdm(all_keys):
+            print("keyframe_idx", keyframe_idx)
             pred_gt_boxes = all_boxes[keyframe_idx]
             # Find the starting index of the clip. If start_idx exceeds the beginning
             # of the video, we only choose valid frame from index 0.
             start_idx = max(0, keyframe_idx - self.seq_length // 2)
             # Number of frames from the start of the current clip and the
             # end of the previous clip.
-            dist = start_idx - prev_end_idx
+           # print("setting dist")
+           # print("start idx ", start_idx)
+           # print("old idx", prev_end_idx)
+            dist = int(start_idx) - prev_end_idx
             # If there are unwritten frames in between clips.
             if dist >= 0:
                 # Get the frames in between previous clip and current clip.
@@ -270,6 +306,10 @@ class AVAVisualizerWithPrecomputedBox:
             clip = prev_buffer + new_frames
             # Calculate the end of this clip. This will be `prev_end_idx` for the
             # next iteration.
+            #print("setting prev end idx")
+            #print("start_idx", start_idx)
+            #print("prev_end_idx", prev_end_idx)
+            #print("len(new_frames)", len(new_frames))
             prev_end_idx = max(start_idx, prev_end_idx) + len(new_frames)
             # For each precomputed or gt boxes.
             for i, boxes in enumerate(pred_gt_boxes):
@@ -290,6 +330,7 @@ class AVAVisualizerWithPrecomputedBox:
                 clip = video_vis.draw_clip_range(
                     clip,
                     label,
+                    activations=self.activations,
                     bboxes=torch.Tensor(bboxes),
                     ground_truth=ground_truth,
                     draw_range=current_draw_range,
@@ -408,7 +449,7 @@ def load_boxes_labels(cfg, video_name, fps, img_width, img_height):
     def sec_to_frameidx(sec):
         return (sec - starting_second) * fps
 
-    def process_bboxes_dict(dictionary):
+    def process_bboxes_dict(dictionary,gt=False):
         """
         Replace all `keyframe_sec` in `dictionary` with `keyframe_idx` and
         merge all [`box_coordinate`, `box_labels`] pairs into
@@ -432,7 +473,10 @@ def load_boxes_labels(cfg, video_name, fps, img_width, img_height):
             keyframe_idx = sec_to_frameidx(keyframe_sec)
             boxes, labels = list(zip(*boxes_and_labels))
             # Shift labels from [1, n_classes] to [0, n_classes - 1].
-            labels = [[i - 1 for i in box_label] for box_label in labels]
+            if not gt:
+                labels = [[i - 1 for i in box_label] for box_label in labels]
+            else:
+                labels = [[i for i in box_label] for box_label in labels]
             boxes = np.array(boxes)
             boxes[:, [0, 2]] *= img_width
             boxes[:, [1, 3]] *= img_height
@@ -448,7 +492,7 @@ def load_boxes_labels(cfg, video_name, fps, img_width, img_height):
         detect_thresh=cfg.AVA.DETECTION_SCORE_THRESH,
         boxes_sample_rate=1,
     )
-    preds_boxes = preds_boxes[video_name]
+    preds_boxes = preds_boxes["-"+".".join(video_name)]
     if gt_boxes_path == "":
         gt_boxes = None
     else:
@@ -458,10 +502,10 @@ def load_boxes_labels(cfg, video_name, fps, img_width, img_height):
             detect_thresh=cfg.AVA.DETECTION_SCORE_THRESH,
             boxes_sample_rate=1,
         )
-        gt_boxes = gt_boxes[video_name]
+        gt_boxes = gt_boxes["-"+".".join(video_name)]
 
     preds_boxes = process_bboxes_dict(preds_boxes)
     if gt_boxes is not None:
-        gt_boxes = process_bboxes_dict(gt_boxes)
+        gt_boxes = process_bboxes_dict(gt_boxes,gt = True)
 
     return preds_boxes, gt_boxes
