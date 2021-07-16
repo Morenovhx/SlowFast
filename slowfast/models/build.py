@@ -23,6 +23,9 @@ def build_model(cfg, gpu_id=None):
         backbone. Details can be seen in slowfast/config/defaults.py.
         gpu_id (Optional[int]): specify the gpu index to build model.
     """
+    # print("\n\nGPU_ID\n\n", gpu_id)
+    gpu_id = cfg.GPU_ID
+    # print("\n\nGPU_ID\n\n", cfg.GPU_ID)
     if torch.cuda.is_available():
         assert (
             cfg.NUM_GPUS <= torch.cuda.device_count()
@@ -43,6 +46,7 @@ def build_model(cfg, gpu_id=None):
         else:
             cur_device = gpu_id
         # Transfer the model to the current GPU device
+        # print("\n\nCUR_DEVICE\n\n", cur_device)
         model = model.cuda(device=cur_device)
     # Use multi-process data parallel model in the multi-gpu setting
     if cfg.NUM_GPUS > 1:

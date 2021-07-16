@@ -60,7 +60,7 @@ def get_sequence(center_idx, half_len, sample_rate, num_frames):
     Returns:
         seq (list): list of indexes of sampled frames in this clip.
     """
-    seq = list(range(center_idx - half_len, center_idx + half_len, sample_rate))
+    seq = list(range(int(center_idx - half_len), int(center_idx + half_len), int(sample_rate)))
 
     for seq_idx in range(len(seq)):
         if seq[seq_idx] < 0:

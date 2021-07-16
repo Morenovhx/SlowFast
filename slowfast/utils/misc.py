@@ -88,36 +88,37 @@ def _get_model_analysis_input(cfg, use_train_input):
     Returns:
         inputs: the input for model analysis.
     """
-    rgb_dimension = 3
-    if use_train_input:
-        input_tensors = torch.rand(
-            rgb_dimension,
-            cfg.DATA.NUM_FRAMES,
-            cfg.DATA.TRAIN_CROP_SIZE,
-            cfg.DATA.TRAIN_CROP_SIZE,
-        )
-    else:
-        input_tensors = torch.rand(
-            rgb_dimension,
-            cfg.DATA.NUM_FRAMES,
-            cfg.DATA.TEST_CROP_SIZE,
-            cfg.DATA.TEST_CROP_SIZE,
-        )
-    model_inputs = pack_pathway_output(cfg, input_tensors)
-    for i in range(len(model_inputs)):
-        model_inputs[i] = model_inputs[i].unsqueeze(0)
-        if cfg.NUM_GPUS:
-            model_inputs[i] = model_inputs[i].cuda(non_blocking=True)
+    with torch.cuda.device(cfg.GPU_ID):
+        rgb_dimension = 3
+        if use_train_input:
+            input_tensors = torch.rand(
+                rgb_dimension,
+                cfg.DATA.NUM_FRAMES,
+                cfg.DATA.TRAIN_CROP_SIZE,
+                cfg.DATA.TRAIN_CROP_SIZE,
+            )
+        else:
+            input_tensors = torch.rand(
+                rgb_dimension,
+                cfg.DATA.NUM_FRAMES,
+                cfg.DATA.TEST_CROP_SIZE,
+                cfg.DATA.TEST_CROP_SIZE,
+            )
+        model_inputs = pack_pathway_output(cfg, input_tensors)
+        for i in range(len(model_inputs)):
+            model_inputs[i] = model_inputs[i].unsqueeze(0)
+            if cfg.NUM_GPUS:
+                model_inputs[i] = model_inputs[i].cuda(non_blocking=True)
 
-    # If detection is enabled, count flops for one proposal.
-    if cfg.DETECTION.ENABLE:
-        bbox = torch.tensor([[0, 0, 1.0, 0, 1.0]])
-        if cfg.NUM_GPUS:
-            bbox = bbox.cuda()
-        inputs = (model_inputs, bbox)
-    else:
-        inputs = (model_inputs,)
-    return inputs
+        # If detection is enabled, count flops for one proposal.
+        if cfg.DETECTION.ENABLE:
+            bbox = torch.tensor([[0, 0, 1.0, 0, 1.0]])
+            if cfg.NUM_GPUS:
+                bbox = bbox.cuda()
+            inputs = (model_inputs, bbox)
+        else:
+            inputs = (model_inputs,)
+        return inputs
 
 
 def get_model_stats(model, cfg, mode, use_train_input):
